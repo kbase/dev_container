@@ -2,6 +2,7 @@
 use Config::Simple;
 use Data::Dumper;
 use strict;
+use File::Copy;
 
 @ARGV == 1 or die "Usage: $0 deploy.cfg\n";
 
@@ -10,16 +11,52 @@ my $cfg_file = shift;
 my $cfg = Config::Simple->new();
 $cfg->read($cfg_file);
 
+my $target = $cfg->param('target');
+my $runtime = $cfg->param('deploy-runtime');
+
+my $deployment_config_name = "deployment.cfg";
+
 my @deploy_services = $cfg->param('deploy-service');
 my @deploy_clients  = $cfg->param('deploy-client');
 
 my @default_settings = make_settings($cfg, 'default');
 
+#
+# Write default environment information to a file in the
+# dev container for the use of the service startup
+# templates.
+#
+
+my %vars = (kb_top => $target,
+	kb_runtime => $runtime,
+	);
+open(F, ">", "common-envars.tt") or die "Cannot write common-envars.tt: $!";
+while (my($var, $val) = each %vars)
+{
+    print F "[% $var = '$val' %]\n";
+}
+print F <<END;
+[% MACRO standard_envars(kb_service_name) BLOCK %]
+export KB_TOP="[% kb_top %]"
+export KB_RUNTIME="[% kb_runtime %]"
+export KB_DEPLOYMENT_CONFIG="[% kb_top %]/$deployment_config_name"
+export PATH="\$KB_TOP/bin:\$KB_RUNTIME/bin:\$PATH"
+export PERL5LIB=\$KB_TOP/lib
+[% IF kb_service_name != "" %]
+export KB_SERVICE_DIR="\$KB_TOP/services/[% kb_service_name %]"
+export KB_SERVICE_NAME="[% kb_service_name %]"
+[% END %]
+[% END %]
+END
+
+close(F);
+
+
 chmod(0400, "id_rsa");
 
 for my $service (@deploy_services, @deploy_clients)
 {
-    if (-d $service)
+    if (-d "modules/$service")
     {
 	warn "$service is already checked out\n";
 	next;
@@ -32,6 +69,13 @@ for my $service (@deploy_services, @deploy_clients)
     {
 	die "failed with rc=$rc: @cmd\n";
     }
+}
+
+my @cmd = ("make", "deploy-setup", @default_settings);
+my $rc = system(@cmd);
+if ($rc != 0)
+{
+    die "failed with rc=$rc: @cmd\n";
 }
 
 for my $service (@deploy_services)
@@ -60,6 +104,12 @@ for my $service (@deploy_clients)
     }
 }
 
+#
+# Copy our deployment config to the target directory.
+#
+
+copy($cfg_file, "$target/$deployment_config_name") or die "Cannot copy $cfg_file to $target/$deployment_config_name";
+
 sub make_settings
 {
     my($cfg, $service) = @_;
@@ -69,6 +119,10 @@ sub make_settings
     {
 	my $var = uc($n);
 	$var =~ s/-/_/g;
+	if (ref($val))
+	{
+	    $val = join(" ", @$val);
+	}
 	push(@out, join("=", $var, $val));
     }
     return @out;

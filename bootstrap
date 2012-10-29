@@ -79,12 +79,42 @@ if [ ! -h $top_dir/runtime ] ; then
     ln -s $rt_dir $top_dir/runtime
 fi
 
+#
+# Construct perl module list and the toplevel bootstrap.cfg
+#
+
 perl_lib=""
+modlist=""
+modlistc=""
 for moddir in modules/* ; do
     p=$top_dir/$moddir/lib
     if [ -d $p ] ; then
 	if [ "$perl_lib" = "" ] ; then perl_lib=$p ; else perl_lib="$perl_lib:$p" ; fi
+	modname=`basename $moddir`
+	if [ "$modlist" = "" ] ; then modlist=$modname ; else modlist="$modlist $modname" ; fi
+	if [ "$modlistc" = "" ] ; then modlistc=$modname ; else modlistc="$modlistc, $modname" ; fi
     fi
+done
+
+
+dcfg=$top_dir/bootstrap.cfg
+cat > $dcfg <<END
+target = /kb/deployment
+deploy-runtime = $rt_dir
+
+deploy-service = $modlistc
+deploy-client =
+
+END
+
+for mod in $modlist ; do
+    md=modules/$mod
+    if [ -f "$md/deploy.cfg" ] ; then
+    	cat $md/deploy.cfg >> $dcfg
+    else
+	echo "[$mod]" >> $dcfg
+    fi
+    echo "" >> $dcfg
 done
 
 for script in tools/*.pl ; do
@@ -103,20 +133,11 @@ done
 
 
 cat > $top_dir/user-env.sh <<EOF
+#!/bin/sh
 export KB_TOP=$top_dir
 export KB_RUNTIME=$rt_dir
 export KB_PERL_PATH=$perl_lib
 export PATH=\$KB_RUNTIME/bin:\$KB_TOP/bin:\$PATH
 export PERL5LIB=\$KB_PERL_PATH
-export PYTHONPATH=\$KB_PERL_PATH:\$PYTHONPATH
-EOF
-
-cat > $top_dir/user-env.csh <<EOF
-setenv KB_TOP $top_dir
-setenv KB_RUNTIME $rt_dir
-setenv KB_PERL_PATH $perl_lib
-setenv PATH \$KB_RUNTIME/bin:\$KB_TOP/bin:\$PATH
-setenv PERL5LIB \$KB_PERL_PATH
-setenv PYTHONPATH \$KB_PERL_PATH:\$PYTHONPATH
 EOF
 
