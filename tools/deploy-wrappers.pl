@@ -1,3 +1,20 @@
+# Usage examples:
+
+# Suitable Makefile rule
+#deploy-script-wrappers:
+#        $(TOOLS_DIR)/deploy-wrappers \
+#                --jsonCommandsFile COMMANDS.json \
+#                --irisCommandsFile COMMANDS.old.format \
+#                --target $(TARGET) \
+#                --devContainerToolsDir $(TOP_DIR)/tools
+
+# Example command line to deploy to dev_container/bin, pointing cli
+# scripts to in-place module scripts (important: use --nocopyScripts
+# to avoid warnings about copying over same file)
+# ../../tools/deploy-wrappers --jsonCommandsFile COMMANDS.json --target /kb/dev_container --devContainerToolsDir ../../tools/ --nocopyScripts --scriptTarget=\\\$KB_TOP/modules/kb_seed/scripts-er
+
+# Omit --irisCommandsFile to use existing COMMANDS file instead
+
 use strict;
 use warnings;
 
@@ -7,8 +24,18 @@ use File::Basename;
 use JSON;
 use Data::Dumper;
 use File::Copy qw(copy);
+use File::Path qw(make_path);
 
-my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$scriptTarget,$TARGET,$DEV_TOOLS_DIR);
+my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$scriptTarget,$copyScripts,$TARGET,$DEV_TOOLS_DIR);
+
+# default values
+{
+no warnings 'uninitialized';
+$DEV_TOOLS_DIR="$ENV{TOP_DIR}/tools";
+$DEV_TOOLS_DIR="$ENV{TOP_DIR}/tools";
+$TARGET=$ENV{TARGET};
+$copyScripts=1;
+}
 
 my $result=GetOptions(
 	"jsonCommandsFile=s"		=>	\$jsonCommandsFile,
@@ -17,13 +44,14 @@ my $result=GetOptions(
 	"scriptTarget=s"		=>	\$scriptTarget,
 	"devContainerToolsDir=s"	=>	\$DEV_TOOLS_DIR,
 	"dryrun"			=>	\$dryrun,
-	"debug" 			=>	\$debug,
+	"debug+" 			=>	\$debug,
+	"copyScripts!" 			=>	\$copyScripts,
 );
 
 die "--jsonCommandsFile required!" unless ($jsonCommandsFile);
 
-$DEV_TOOLS_DIR="$ENV{TOP_DIR}/tools" unless ($DEV_TOOLS_DIR);
-$TARGET=$ENV{TARGET} unless ($TARGET);
+warn $TARGET;
+# need to set this here, in case $TARGET was specified command-line
 $scriptTarget="$TARGET/plbin/" unless ($scriptTarget);
 
 my $commandsJson = read_file($jsonCommandsFile) or die "couldn't read $jsonCommandsFile: $!";
@@ -32,15 +60,11 @@ my $json=JSON->new;
 
 my $commands = $json->decode($commandsJson);
 
-#print Dumper($commands);
-#warn $commands->{cli}{'deprecated-commands'}[0]{iris};
-
-#print_iris_commands($commands->{'iris'},$irisCommandsFile) if ($irisCommandsFile);
-
-
 my ($commands_to_deploy, $iris_command_list) = process_command_list($commands->{'cli'}->{'commands'});
 my ($dep_commands_to_deploy, $iris_dep_command_list) = process_deprecated_command_list($commands->{'cli'}->{'deprecated-commands'});
 
+# should combine these into one?
+write_iris_groups($commands->{'iris'},$irisCommandsFile) if ($irisCommandsFile and !$dryrun);
 write_iris_commands($iris_command_list,$iris_dep_command_list) if ($irisCommandsFile and !$dryrun);
 
 deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DEV_TOOLS_DIR);
@@ -50,7 +74,7 @@ deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DE
 # wrap cli commands
 # wrap deprecated cli commands
 
-sub print_iris_commands {
+sub write_iris_groups {
 	
 	my $iris=shift;
 	my $irisCommandsFile=shift;
@@ -58,8 +82,6 @@ sub print_iris_commands {
 	warn $irisCommandsFile;
 	
 	my $groupNames=$iris->{'group-names'};
-	my $commandSets=$iris->{'command-sets'};
-	my $commands=$iris->{'commands'};
 	
 	my $irisCommandsFileText;
 	
@@ -70,32 +92,6 @@ sub print_iris_commands {
 		$irisCommandsFileText.=join "\t",'#group-name',$groupName->{'group-name'},$groupName->{'description'};
 		$irisCommandsFileText.="\n";
 	}
-	
-	# write the command-sets
-	foreach my $commandSet (@$commandSets)
-	{
-		warn Dumper($commandSet);
-		$irisCommandsFileText.=join "\t",'#command-set',$commandSet->{'pattern'},$commandSet->{'group-name'};
-		$irisCommandsFileText.="\n";
-		
-		
-		open(FIND, "-|", "find", $commandSet->{'pattern'}, "-type", "f") or die "cannot open find: $!";
-		my @files = <FIND>;
-		chomp @files;
-		@files = grep { ! m,^\./\.git/, } @files;
-		print Dumper(@files)."\n";
-		
-		
-	}
-	
-	# write individual commands
-	foreach my $command (@$commands)
-	{
-		warn Dumper($command);
-		$irisCommandsFileText.=join "\t",$command->{'command-name'},$command->{'group-name'};
-		$irisCommandsFileText.="\n";
-	}
-	
 	
 	open (IRISCOMMANDSFILE,'>',$irisCommandsFile) or die "couldn't open $irisCommandsFile: $!";
 	print IRISCOMMANDSFILE $irisCommandsFileText;
@@ -114,16 +110,16 @@ sub process_command_list {
 	my $iris_command_list = {};
 	
 	# list of the commands we want to deploy.  Each element is a hash {name=>, file=>, lang=>}
-	my $commands_to_deploy = [];
+	my $commands_to_deploy = {};
 	
 	my $command_count = 0;
 	foreach my $command (@$commands)
 	{
-		warn "------------\n" if ($debug);
-		if ( defined($command->{'file'}) && defined($command->{'lang'}) )
+#		warn Dumper($command) if ($debug);
+		if ( defined($command->{'file-spec'}) && defined($command->{'lang'}) )
 		{
 			
-			my @files = glob $command->{'file'};
+			my @files = glob $command->{'file-spec'};
 			foreach my $file (@files)
 			{
 				warn $file."\n" if ($debug);
@@ -140,18 +136,25 @@ sub process_command_list {
 					$iris_command_list->{$commandname} = $command->{'iris-group-name'};
 				}
 				
+				if ($commands_to_deploy->{$file})
+				{
+					warn "warning: file $file has been specified more than once, skipping\n";
+					next;
+				}
 				# add to the commands to deploy list
-				my $command_summary = {
+				$commands_to_deploy->{$file} = 
+							{
 						       'name'=>$commandname,
 						       'file'=>$file,
 						       'basename'=>basename($file),
 						       'lang'=>$command->{'lang'}
 						       };
-				push(@$commands_to_deploy,$command_summary);
+#				push(@$commands_to_deploy,$command_summary);
 			}
 		}
 	}
 	
+	warn Dumper($commands_to_deploy) if ($debug);
 	return ($commands_to_deploy, $iris_command_list);
 }
 
@@ -227,7 +230,7 @@ sub write_iris_commands {
 		return $irisCommandsFileText;
 	}
 
-	open (IRISCOMMANDSFILE,'>',$irisCommandsFile) or die "couldn't open $irisCommandsFile: $!";
+	open (IRISCOMMANDSFILE,'>>',$irisCommandsFile) or die "couldn't open $irisCommandsFile: $!";
 	print IRISCOMMANDSFILE $irisCommandsFileText;
 	close IRISCOMMANDSFILE;
 }
@@ -253,19 +256,22 @@ sub deploy_and_wrap_commands {
 	my $TARGET = shift;
 	my $DEV_TOOLS_DIR = shift;
 	
-	# de
-	foreach my $command (@$commands_to_deploy)
+	foreach my $command_name (keys %$commands_to_deploy)
 	{
+		my $command=$commands_to_deploy->{$command_name};
 		# 1 deploy the command by copying it over, then 2
 		print "installing ".$command->{'name'}."\n";
 		if(-f $command->{'file'}) {
 			
 			if ($command->{'lang'} eq 'perl') {
 				my $destination = $scriptTarget.$command->{'basename'};
-				print "  warning, overwriting: '".$destination."'\n" if(-f $destination);
-				unless ($dryrun) {
-					copy($command->{'file'},$destination) or die "copy failed: $!";
+				if ($copyScripts and !$dryrun) {
+					warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
+					copy($command->{'file'},$destination) or die "copy to $destination failed: $!";
+				} elsif ($dryrun) {
+					warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
 				}
+
 				# call wrap perl here!!  but how do we find where it is installed-- it is defined
 				# as a makefile flag
 				my $wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".$destination." ".$TARGET."/bin/".$command->{'name'};
