@@ -8,16 +8,23 @@ use JSON;
 use Data::Dumper;
 use File::Copy qw(copy);
 
-my ($jsonCommandsFile,$irisCommandsFile,$TARGET,$DEV_TOOLS_DIR);
+my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$scriptTarget,$TARGET,$DEV_TOOLS_DIR);
 
 my $result=GetOptions(
-	"jsonCommandsFile=s"	 =>	\$jsonCommandsFile,
-	"irisCommandsFile=s"	 =>	\$irisCommandsFile,
-	"target=s"		 =>	\$TARGET,
-	"devContainerToolsDir=s" =>     \$DEV_TOOLS_DIR,
+	"jsonCommandsFile=s"		=>	\$jsonCommandsFile,
+	"irisCommandsFile=s"		=>	\$irisCommandsFile,
+	"target=s"			=>	\$TARGET,
+	"scriptTarget=s"		=>	\$scriptTarget,
+	"devContainerToolsDir=s"	=>	\$DEV_TOOLS_DIR,
+	"dryrun"			=>	\$dryrun,
+	"debug" 			=>	\$debug,
 );
 
 die "--jsonCommandsFile required!" unless ($jsonCommandsFile);
+
+$DEV_TOOLS_DIR="$ENV{TOP_DIR}/tools" unless ($DEV_TOOLS_DIR);
+$TARGET=$ENV{TARGET} unless ($TARGET);
+$scriptTarget="$TARGET/plbin/" unless ($scriptTarget);
 
 my $commandsJson = read_file($jsonCommandsFile) or die "couldn't read $jsonCommandsFile: $!";
 
@@ -34,8 +41,7 @@ my $commands = $json->decode($commandsJson);
 my ($commands_to_deploy, $iris_command_list) = process_command_list($commands->{'cli'}->{'commands'});
 my ($dep_commands_to_deploy, $iris_dep_command_list) = process_deprecated_command_list($commands->{'cli'}->{'deprecated-commands'});
 
-write_iris_commands($iris_command_list,$iris_dep_command_list);
-
+write_iris_commands($iris_command_list,$iris_dep_command_list) if ($irisCommandsFile and !$dryrun);
 
 deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DEV_TOOLS_DIR);
 
@@ -113,20 +119,20 @@ sub process_command_list {
 	my $command_count = 0;
 	foreach my $command (@$commands)
 	{
-		print "------------\n";
+		warn "------------\n" if ($debug);
 		if ( defined($command->{'file'}) && defined($command->{'lang'}) )
 		{
 			
 			my @files = glob $command->{'file'};
 			foreach my $file (@files)
 			{
-				print $file."\n";
+				warn $file."\n" if ($debug);
 				print STDERR "Warning: $file is not a regular file\n" unless (-f $file);
 				
 				# extract out the command name
 				my $commandname = basename($file);
 				$commandname =~ s/\.[^.]+$//;
-				print $commandname."\n";
+				warn $commandname."\n" if ($debug);
 				
 				# add to the iris list if a group-name was defined
 				if(defined($command->{'iris-group-name'}))
@@ -163,7 +169,7 @@ sub process_deprecated_command_list {
 	my $command_count = 0;
 	foreach my $command (@$dep_commands)
 	{
-		print "------------\n";
+		warn "------------\n" if ($debug);
 		if ( defined($command->{'deprecated-name'}) && defined($command->{'file-name'}) && defined($command->{'lang'}) )
 		{
 			if($command->{'deploy-to-iris'})
@@ -199,26 +205,31 @@ sub write_iris_commands {
 	my $iris_command_list = shift;
 	my $iris_dep_command_list = shift;
 	
-	
 	my $irisCommandsFileText = '';
 	
 	# write individual commands
 	foreach my $command (keys %$iris_command_list)
 	{
-		warn Dumper($command);
+		warn Dumper($command) if ($debug);
 		$irisCommandsFileText.=join "\t",$command,$iris_command_list->{$command};
 		$irisCommandsFileText.="\n";
 	}
 	foreach my $command (@$iris_dep_command_list)
 	{
-		warn Dumper($command);
+		warn Dumper($command) if ($debug);
 		$irisCommandsFileText.=join "\t",$command,'deprecated';
 		$irisCommandsFileText.="\n";
 	}
 	
-	print "\n^^^^^^^^^^^^^^^^^^^^^^^^^\n";
-	print $irisCommandsFileText."\n";
-	return $irisCommandsFileText;
+	if ($debug) {
+		print "\n^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+		print $irisCommandsFileText."\n";
+		return $irisCommandsFileText;
+	}
+
+	open (IRISCOMMANDSFILE,'>',$irisCommandsFile) or die "couldn't open $irisCommandsFile: $!";
+	print IRISCOMMANDSFILE $irisCommandsFileText;
+	close IRISCOMMANDSFILE;
 }
 
 
@@ -250,27 +261,31 @@ sub deploy_and_wrap_commands {
 		if(-f $command->{'file'}) {
 			
 			if ($command->{'lang'} eq 'perl') {
-				my $destination = $TARGET."/plbin/".$command->{'basename'};
-				print "  --warning, overwriting: '".$destination."'\n" if(-f $destination);
-				copy($command->{'file'},$destination);
+				my $destination = $scriptTarget.$command->{'basename'};
+				print "  warning, overwriting: '".$destination."'\n" if(-f $destination);
+				unless ($dryrun) {
+					copy($command->{'file'},$destination) or die "copy failed: $!";
+				}
 				# call wrap perl here!!  but how do we find where it is installed-- it is defined
 				# as a makefile flag
 				my $wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".$destination." ".$TARGET."/bin/".$command->{'name'};
-				print "  --".$wrap_command."\n";
-				`$wrap_command`;
+				print $wrap_command."\n";
+				unless ($dryrun) {
+					system($wrap_command)==0 or die ("could not run $wrap_command: $!");
+				}
 				
 			}
 			#elsif ($command->{'name'} eq 'python') {
 				
 			#}
 			else {
-				print "  --ABORTING! cannot wrap command written in language '".$command->{'lang'}."'\n";
+				print "  --skipping! cannot wrap command written in language '".$command->{'lang'}."'\n";
 			}
 			
 			
 			
 		} else {
-			print "  --ABORTING! file '".$command->{'file'}."' does not exist.\n";
+			print "  --skipping! file '".$command->{'file'}."' does not exist.\n";
 		}
 		
 		
