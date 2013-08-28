@@ -21,6 +21,7 @@ use warnings;
 use Getopt::Long;
 use File::Slurp;
 use File::Basename;
+use File::Spec;
 use JSON;
 use Data::Dumper;
 use File::Copy qw(copy);
@@ -265,17 +266,21 @@ sub deploy_and_wrap_commands {
 			
 			if ($command->{'lang'} eq 'perl') {
 				my $destination = $scriptTarget.$command->{'basename'};
-				if ($copyScripts and !$dryrun) {
-					warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
-					copy($command->{'file'},$destination) or die "copy to $destination failed: $!";
-				} elsif ($dryrun) {
-					warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
+				if ($copyScripts) {
+					if ($dryrun) {
+						warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
+					} else {
+						warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
+						copy($command->{'file'},$destination) or die "copy to $destination failed: $!";
+					}
+				} else {
+					# we are not copying scripts, so we need to point to the original script
+					$destination = File::Spec->rel2abs($command->{'file'});
 				}
 
-				# call wrap perl here!!  but how do we find where it is installed-- it is defined
-				# as a makefile flag
+				# call wrap perl
 				my $wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".$destination." ".$TARGET."/bin/".$command->{'name'};
-				print $wrap_command."\n";
+				print "  ".$wrap_command."\n";
 				unless ($dryrun) {
 					system($wrap_command)==0 or die ("could not run $wrap_command: $!");
 				}
