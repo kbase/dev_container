@@ -363,13 +363,25 @@ sub deploy_and_wrap_commands {
 			}
 
 			
+			# figure out what the warning should be
+			my $warning_mssg='';
+			if($dep_command->{'warning-mssg'}) {
+				$warning_mssg = $dep_command->{'warning-mssg'};
+				$warning_mssg = "\"".$warning_mssg."\"";
+			}
+			my $new_command_name='NONE';
+			if($dep_command->{'new-command-name'}) {
+				$new_command_name = $dep_command->{'new-command-name'};
+			}
+			
+			
 			#set up the command to wrap the script
 			my $wrap_command;
 			if ($dep_command->{'lang'} eq 'perl') {
 				$wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".
 							$destination." ".
 							$TARGET."/bin/".$dep_command->{'deprecated-name'}." ".
-							$dep_command->{'new-command-name'};
+							$new_command_name." ".$warning_mssg;
 			}
 			elsif ($dep_command->{'name'} eq 'python') {
 				$wrap_command = $DEV_TOOLS_DIR."/wrap_python ".$destination." ".$TARGET."/bin/".$dep_command->{'deprecated-name'};
