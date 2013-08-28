@@ -27,7 +27,7 @@ use Data::Dumper;
 use File::Copy qw(copy);
 use File::Path qw(make_path);
 
-my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$scriptTarget,$copyScripts,$TARGET,$DEV_TOOLS_DIR);
+my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$copyScripts,$TARGET,$DEV_TOOLS_DIR);
 
 # default values
 {
@@ -42,39 +42,43 @@ my $result=GetOptions(
 	"jsonCommandsFile=s"		=>	\$jsonCommandsFile,
 	"irisCommandsFile=s"		=>	\$irisCommandsFile,
 	"target=s"			=>	\$TARGET,
-	"scriptTarget=s"		=>	\$scriptTarget,
 	"devContainerToolsDir=s"	=>	\$DEV_TOOLS_DIR,
 	"dryrun"			=>	\$dryrun,
 	"debug+" 			=>	\$debug,
 	"copyScripts!" 			=>	\$copyScripts,
 );
 
+# we need, at a minumum the COMMANDS.json file to run
 die "--jsonCommandsFile required!" unless ($jsonCommandsFile);
-
-warn $TARGET;
-# need to set this here, in case $TARGET was specified command-line
-$scriptTarget="$TARGET/plbin/" unless ($scriptTarget);
-
 my $commandsJson = read_file($jsonCommandsFile) or die "couldn't read $jsonCommandsFile: $!";
 
-my $json=JSON->new;
 
+# parse the JSON commands file
+my $json=JSON->new;
 my $commands = $json->decode($commandsJson);
 
+#extract out the list of commands and info needed by iris
 my ($commands_to_deploy, $iris_command_list) = process_command_list($commands->{'cli'}->{'commands'});
 my ($dep_commands_to_deploy, $iris_dep_command_list) = process_deprecated_command_list($commands->{'cli'}->{'deprecated-commands'});
 
+#write the old style commands file if requested
 # should combine these into one?
 write_iris_groups($commands->{'iris'},$irisCommandsFile) if ($irisCommandsFile and !$dryrun);
 write_iris_commands($iris_command_list,$iris_dep_command_list) if ($irisCommandsFile and !$dryrun);
 
-deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DEV_TOOLS_DIR);
+#if TARGET is defined, then we deploy
+deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DEV_TOOLS_DIR) if ($TARGET);
+
+
+# we are done!
+exit(0);
+     
+     
+
+     
 
 
 # dump iris section to COMMANDS
-# wrap cli commands
-# wrap deprecated cli commands
-
 sub write_iris_groups {
 	
 	my $iris=shift;
@@ -160,7 +164,7 @@ sub process_command_list {
 }
 
 
-# accepts the parsed json COMMANDS.json, returns list of IRIS commands, list of 
+# accepts the parsed json COMMANDS.json, returns list of IRIS commands, list of deprecated commands
 sub process_deprecated_command_list {
 	my $dep_commands = shift;
 	
@@ -168,7 +172,7 @@ sub process_deprecated_command_list {
 	my $iris_dep_command_list = [];
 	
 	# list of the commands we want to deploy.  Each element is a hash {name=>, file=>, lang=>}
-	my $dep_commands_to_deploy = [];
+	my $dep_commands_to_deploy = {};
 	
 	my $command_count = 0;
 	foreach my $command (@$dep_commands)
@@ -197,14 +201,14 @@ sub process_deprecated_command_list {
 			if ( defined($command->{'warning-mssg'}) ) {
 				$command_summary->{'warning-mssg'} = $command->{'warning-mssg'};
 			}
-			push(@$dep_commands_to_deploy,$command_summary);
+			$dep_commands_to_deploy->{$command} = $command_summary ;
 		}
 	}
 	
 	return ($dep_commands_to_deploy, $iris_dep_command_list);
 }
 
-# given the parse, write the old style COMMMANDS file
+# given the parse, append list of each command in the old style COMMMANDS file
 sub write_iris_commands {
 	my $iris_command_list = shift;
 	my $iris_dep_command_list = shift;
@@ -238,25 +242,16 @@ sub write_iris_commands {
 
 
 
-# when we call make with no targets, we need to put script wrappers in the dev_container/bin
-# directory so that it is available to other modules.  Thus, we need to be able to call
-# this script and wrap commands without installing them anywhere.
-sub wrap_commands_only {
-	my $commands_to_deploy = shift;
-	my $dep_commands_to_deploy = shift;
-	my $TARGET = shift;
-	my $DEV_TOOLS_DIR = shift;
-	
-}
 
 
-#
+# do the actual deployment
 sub deploy_and_wrap_commands {
 	my $commands_to_deploy = shift;
 	my $dep_commands_to_deploy = shift;
 	my $TARGET = shift;
 	my $DEV_TOOLS_DIR = shift;
 	
+	# deploy all the commands requested
 	foreach my $command_name (sort keys %$commands_to_deploy)
 	{
 		my $command=$commands_to_deploy->{$command_name};
@@ -264,45 +259,134 @@ sub deploy_and_wrap_commands {
 		print "installing ".$command->{'name'}."\n";
 		if(-f $command->{'file'}) {
 			
+			# determine the target deployment destination of the script
+			my $destination;
 			if ($command->{'lang'} eq 'perl') {
-				my $destination = $scriptTarget.$command->{'basename'};
-				if ($copyScripts) {
-					if ($dryrun) {
-						warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
-					} else {
-						warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
-						copy($command->{'file'},$destination) or die "copy to $destination failed: $!";
-					}
-				} else {
-					# we are not copying scripts, so we need to point to the original script
-					$destination = File::Spec->rel2abs($command->{'file'});
-				}
-
-				# call wrap perl
-				my $wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".$destination." ".$TARGET."/bin/".$command->{'name'};
-				print "  ".$wrap_command."\n";
-				unless ($dryrun) {
-					system($wrap_command)==0 or die ("could not run $wrap_command: $!");
-				}
-				
+				$destination = "$TARGET/plbin/".$command->{'basename'};
 			}
-			#elsif ($command->{'name'} eq 'python') {
-				
-			#}
+			elsif ($command->{'name'} eq 'python') {
+				$destination = "$TARGET/pybin/".$command->{'basename'};
+			}
 			else {
-				print "  --skipping! cannot wrap command written in language '".$command->{'lang'}."'\n";
+				print "  skipping! cannot wrap command written in language '".$command->{'lang'}."'\n";
+				next;
 			}
 			
+			# copy the script if we need to
+			if ($copyScripts) {
+				if ($dryrun) {
+					warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
+				} else {
+					warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
+					copy($command->{'file'},$destination) or die "copy to $destination failed: $!";
+				}
+			} else {
+				# we are not copying scripts, so we need to point the destination to the original script
+				# location.  this allows us to call the file directly from the wrapper
+				$destination = File::Spec->rel2abs($command->{'file'});
+			}
+
 			
+			#set up the command to wrap the script
+			my $wrap_command;
+			if ($command->{'lang'} eq 'perl') {
+				$wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".$destination." ".$TARGET."/bin/".$command->{'name'};
+			}
+			elsif ($command->{'name'} eq 'python') {
+				$wrap_command = $DEV_TOOLS_DIR."/wrap_python ".$destination." ".$TARGET."/bin/".$command->{'name'};
+			}
+			
+			# actually call the wrap script
+			print "  ".$wrap_command."\n";
+			unless ($dryrun) {
+				system($wrap_command)==0 or die ("could not run $wrap_command: $!");
+			}
 			
 		} else {
-			print "  --skipping! file '".$command->{'file'}."' does not exist.\n";
+			print "  skipping! file '".$command->{'file'}."' does not exist.\n";
 		}
 		
 		
 	}
 	
 	
+	#$command_summary = {
+	#			'deprecated-name'=>$command->{'deprecated-name'},
+	#			'file-name'=>$command->{'file-name'},
+	#			'lang'=>$command->{'lang'}
+	#			};
+	#		
+	#		if ( defined($command->{'new-command-name'}) ) {
+	#			$command_summary->{'new-command-name'} = $command->{'new-command-name'};
+	#		}
+	#		
+	#		if ( defined($command->{'warning-mssg'}) ) {
+	#			$command_summary->{'warning-mssg'} = $command->{'warning-mssg'};
+	#		}
+	
+	
+	
+	# deploy all the deprecated commands requested
+	foreach my $dep_command_name (sort keys %$dep_commands_to_deploy)
+	{
+		my $dep_command=%$dep_commands_to_deploy->{$dep_command_name};
+		# 1 deploy the command by copying it over
+		print "installing deprecated command: ".$dep_command->{'deprecated-name'}."\n";
+		
+		if(-f $dep_command->{'file-name'}) {
+			
+			# determine the target deployment destination of the script
+			my $destination;
+			if ($dep_command->{'lang'} eq 'perl') {
+				$destination = "$TARGET/plbin/".$dep_command->{'file-name'};
+			}
+			elsif ($dep_command->{'name'} eq 'python') {
+				$destination = "$TARGET/pybin/".$dep_command->{'file-name'};
+			}
+			else {
+				print "  skipping! cannot wrap command written in language '".$dep_command->{'lang'}."'\n";
+				next;
+			}
+			
+			# copy the script if we need to
+			if ($copyScripts) {
+				if ($dryrun) {
+					warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
+				} else {
+					warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
+					copy($dep_command->{'file-name'},$destination) or die "copy to $destination failed: $!";
+				}
+			} else {
+				# we are not copying scripts, so we need to point the destination to the original script
+				# location.  this allows us to call the file directly from the wrapper
+				$destination = File::Spec->rel2abs($dep_command->{'file-name'});
+			}
+
+			
+			#set up the command to wrap the script
+			my $wrap_command;
+			if ($dep_command->{'lang'} eq 'perl') {
+				$wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".
+							$destination." ".
+							$TARGET."/bin/".$dep_command->{'deprecated-name'}." ".
+							$dep_command->{'new-command-name'};
+			}
+			elsif ($dep_command->{'name'} eq 'python') {
+				$wrap_command = $DEV_TOOLS_DIR."/wrap_python ".$destination." ".$TARGET."/bin/".$dep_command->{'deprecated-name'};
+			}
+			
+			# actually call the wrap script
+			print "  ".$wrap_command."\n";
+			unless ($dryrun) {
+				system($wrap_command)==0 or die ("could not run $wrap_command: $!");
+			}
+			
+		} else {
+			print "  --skipping! file '".$dep_command->{'file'}."' does not exist.\n";
+		}
+		
+		
+	}
 	
 }
 
