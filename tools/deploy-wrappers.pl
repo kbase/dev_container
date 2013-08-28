@@ -256,7 +256,7 @@ sub deploy_and_wrap_commands {
 	my $TARGET = shift;
 	my $DEV_TOOLS_DIR = shift;
 	
-	foreach my $command_name (keys %$commands_to_deploy)
+	foreach my $command_name (sort keys %$commands_to_deploy)
 	{
 		my $command=$commands_to_deploy->{$command_name};
 		# 1 deploy the command by copying it over, then 2
