@@ -27,7 +27,7 @@ use Data::Dumper;
 use File::Copy qw(copy);
 use File::Path qw(make_path);
 
-my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$copyScripts,$TARGET,$DEV_TOOLS_DIR);
+my ($jsonCommandsFile,$irisCommandsFile,$dryrun,$debug,$copyScripts,$TARGET,$DEV_TOOLS_DIR, $undeploy);
 
 # default values
 {
@@ -46,6 +46,7 @@ my $result=GetOptions(
 	"dryrun"			=>	\$dryrun,
 	"debug+" 			=>	\$debug,
 	"copyScripts!" 			=>	\$copyScripts,
+	"undeploy" 			=>	\$undeploy
 );
 
 # we need, at a minumum the COMMANDS.json file to run
@@ -67,7 +68,10 @@ write_iris_groups($commands->{'iris'},$irisCommandsFile) if ($irisCommandsFile a
 write_iris_commands($iris_command_list,$iris_dep_command_list) if ($irisCommandsFile and !$dryrun);
 
 #if TARGET is defined, then we deploy
-deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DEV_TOOLS_DIR) if ($TARGET);
+deploy_and_wrap_commands($commands_to_deploy,$dep_commands_to_deploy,$TARGET,$DEV_TOOLS_DIR) if ($TARGET && !$undeploy);
+
+undeploy($commands_to_deploy,$dep_commands_to_deploy,$TARGET) if($TARGET && $undeploy);
+
 
 
 # we are done!
@@ -252,11 +256,12 @@ sub deploy_and_wrap_commands {
 	my $DEV_TOOLS_DIR = shift;
 	
 	# deploy all the commands requested
-	foreach my $command_name (sort keys %$commands_to_deploy)
+	my @sorted_cmd_keys = sort keys %$commands_to_deploy;
+	foreach my $command_name (@sorted_cmd_keys)
 	{
 		my $command=$commands_to_deploy->{$command_name};
 		# 1 deploy the command by copying it over, then 2
-		print "installing ".$command->{'name'}."\n";
+		print "installing ".$command->{'name'}." to $TARGET/bin\n";
 		if(-f $command->{'file'}) {
 			
 			# determine the target deployment destination of the script
@@ -264,7 +269,7 @@ sub deploy_and_wrap_commands {
 			if ($command->{'lang'} eq 'perl') {
 				$destination = "$TARGET/plbin/".$command->{'basename'};
 			}
-			elsif ($command->{'name'} eq 'python') {
+			elsif ($command->{'lang'} eq 'python') {
 				$destination = "$TARGET/pybin/".$command->{'basename'};
 			}
 			else {
@@ -292,7 +297,7 @@ sub deploy_and_wrap_commands {
 			if ($command->{'lang'} eq 'perl') {
 				$wrap_command = $DEV_TOOLS_DIR."/wrap_perl ".$destination." ".$TARGET."/bin/".$command->{'name'};
 			}
-			elsif ($command->{'name'} eq 'python') {
+			elsif ($command->{'lang'} eq 'python') {
 				$wrap_command = $DEV_TOOLS_DIR."/wrap_python ".$destination." ".$TARGET."/bin/".$command->{'name'};
 			}
 			
@@ -305,43 +310,25 @@ sub deploy_and_wrap_commands {
 		} else {
 			print "  skipping! file '".$command->{'file'}."' does not exist.\n";
 		}
-		
-		
 	}
 	
-	
-	#$command_summary = {
-	#			'deprecated-name'=>$command->{'deprecated-name'},
-	#			'file-name'=>$command->{'file-name'},
-	#			'lang'=>$command->{'lang'}
-	#			};
-	#		
-	#		if ( defined($command->{'new-command-name'}) ) {
-	#			$command_summary->{'new-command-name'} = $command->{'new-command-name'};
-	#		}
-	#		
-	#		if ( defined($command->{'warning-mssg'}) ) {
-	#			$command_summary->{'warning-mssg'} = $command->{'warning-mssg'};
-	#		}
-	
-	
-	
 	# deploy all the deprecated commands requested
-	foreach my $dep_command_name (sort keys %$dep_commands_to_deploy)
+	my @sorted_dep_cmd_keys = sort keys %$dep_commands_to_deploy;
+	foreach my $dep_command_name (@sorted_dep_cmd_keys)
 	{
 		my $dep_command=%$dep_commands_to_deploy->{$dep_command_name};
 		# 1 deploy the command by copying it over
-		print "installing deprecated command: ".$dep_command->{'deprecated-name'}."\n";
+		print "installing deprecated command: ".$dep_command->{'deprecated-name'}." to $TARGET/bin\n";
 		
 		if(-f $dep_command->{'file-name'}) {
 			
 			# determine the target deployment destination of the script
 			my $destination;
 			if ($dep_command->{'lang'} eq 'perl') {
-				$destination = "$TARGET/plbin/".$dep_command->{'file-name'};
+				$destination = "$TARGET/plbin/".basename($dep_command->{'file-name'});
 			}
-			elsif ($dep_command->{'name'} eq 'python') {
-				$destination = "$TARGET/pybin/".$dep_command->{'file-name'};
+			elsif ($dep_command->{'lang'} eq 'python') {
+				$destination = "$TARGET/pybin/".basename($dep_command->{'file-name'});
 			}
 			else {
 				print "  skipping! cannot wrap command written in language '".$dep_command->{'lang'}."'\n";
@@ -354,7 +341,7 @@ sub deploy_and_wrap_commands {
 					warn "  warning, would overwrite '".$destination."'\n" if(-f $destination);
 				} else {
 					warn "  warning, overwriting '".$destination."'\n" if(-f $destination);
-					copy($dep_command->{'file-name'},$destination) or die "copy to $destination failed: $!";
+					copy($dep_command->{'file-name'},$destination) or die "copy of $dep_command->{'file-name'} to $destination failed: $!";
 				}
 			} else {
 				# we are not copying scripts, so we need to point the destination to the original script
@@ -383,7 +370,7 @@ sub deploy_and_wrap_commands {
 							$TARGET."/bin/".$dep_command->{'deprecated-name'}." ".
 							$new_command_name." ".$warning_mssg;
 			}
-			elsif ($dep_command->{'name'} eq 'python') {
+			elsif ($dep_command->{'lang'} eq 'python') {
 				$wrap_command = $DEV_TOOLS_DIR."/wrap_python ".$destination." ".$TARGET."/bin/".$dep_command->{'deprecated-name'};
 			}
 			
@@ -408,6 +395,62 @@ sub undeploy {
 	my $dep_commands_to_deploy = shift;
 	my $TARGET = shift;
 	
+	my @removal_list;
+	
+	my @sorted_cmd_keys = sort keys %$commands_to_deploy;
+	foreach my $command_name (@sorted_cmd_keys)
+	{
+		my $command=$commands_to_deploy->{$command_name};
+		if($dryrun) {
+			print "would have uninstalled ".$command->{'name'}." from $TARGET/bin\n";
+		} else {
+			print "uninstalling ".$command->{'name'}." from $TARGET/bin\n";
+			unlink($TARGET."/bin/".$command->{'name'});
+		}
+		if ($copyScripts) {
+			my $destination;
+			if ($command->{'lang'} eq 'perl') {
+				$destination = "$TARGET/plbin/".$command->{'basename'};
+			}
+			elsif ($command->{'lang'} eq 'python') {
+				$destination = "$TARGET/pybin/".$command->{'basename'};
+			}
+			if($dryrun) {
+				print "would have deleted file ".$destination."\n";
+			} else {
+				print "deleting ".$destination."\n";
+				unlink($destination);
+			}
+		}
+	}
+	
+	
+	my @sorted_dep_cmd_keys = sort keys %$dep_commands_to_deploy;
+	foreach my $dep_command_name (@sorted_dep_cmd_keys)
+	{
+		my $dep_command=%$dep_commands_to_deploy->{$dep_command_name};
+		if($dryrun) {
+			print "would have uninstalled ".$dep_command->{'deprecated-name'}." from $TARGET/bin\n";
+		} else {
+			print "uninstalling ".$dep_command->{'deprecated-name'}." from $TARGET/bin\n";
+			unlink($TARGET."/bin/".$dep_command->{'deprecated-name'});
+		}
+		if ($copyScripts) {
+			my $destination;
+			if ($dep_command->{'lang'} eq 'perl') {
+				$destination = "$TARGET/plbin/".basename($dep_command->{'file-name'});
+			}
+			elsif ($dep_command->{'lang'} eq 'python') {
+				$destination = "$TARGET/pybin/".basename($dep_command->{'file-name'});
+			}
+			if($dryrun) {
+				print "would have deleted file ".$destination."\n";
+			} else {
+				print "deleting ".$destination."\n";
+				unlink($destination);
+			}
+		}
+	}
 }
 
 
