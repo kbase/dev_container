@@ -316,7 +316,7 @@ sub deploy_and_wrap_commands {
 	my @sorted_dep_cmd_keys = sort keys %$dep_commands_to_deploy;
 	foreach my $dep_command_name (@sorted_dep_cmd_keys)
 	{
-		my $dep_command=%$dep_commands_to_deploy->{$dep_command_name};
+		my $dep_command=$dep_commands_to_deploy->{$dep_command_name};
 		# 1 deploy the command by copying it over
 		print "installing deprecated command: ".$dep_command->{'deprecated-name'}." to $TARGET/bin\n";
 		
@@ -428,7 +428,7 @@ sub undeploy {
 	my @sorted_dep_cmd_keys = sort keys %$dep_commands_to_deploy;
 	foreach my $dep_command_name (@sorted_dep_cmd_keys)
 	{
-		my $dep_command=%$dep_commands_to_deploy->{$dep_command_name};
+		my $dep_command=$dep_commands_to_deploy->{$dep_command_name};
 		if($dryrun) {
 			print "would have uninstalled ".$dep_command->{'deprecated-name'}." from $TARGET/bin\n";
 		} else {
