@@ -88,7 +88,7 @@ sub write_iris_groups {
 	my $iris=shift;
 	my $irisCommandsFile=shift;
 	
-	warn $irisCommandsFile;
+	warn $irisCommandsFile if ($debug);
 	
 	my $groupNames=$iris->{'group-names'};
 	
