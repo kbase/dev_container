@@ -101,6 +101,8 @@ sub write_iris_groups {
 		$irisCommandsFileText.=join "\t",'#group-name',$groupName->{'group-name'},$groupName->{'description'};
 		$irisCommandsFileText.="\n";
 	}
+
+	return unless ($irisCommandsFileText);
 	
 	open (IRISCOMMANDSFILE,'>',$irisCommandsFile) or die "couldn't open $irisCommandsFile: $!";
 	print IRISCOMMANDSFILE $irisCommandsFileText;
