@@ -97,7 +97,7 @@ sub write_iris_groups {
 	# write the group-names
 	foreach my $groupName (@$groupNames)
 	{
-		warn Dumper($groupName);
+		warn Dumper($groupName) if ($debug);
 		$irisCommandsFileText.=join "\t",'#group-name',$groupName->{'group-name'},$groupName->{'description'};
 		$irisCommandsFileText.="\n";
 	}
@@ -222,13 +222,15 @@ sub write_iris_commands {
 	my $irisCommandsFileText = '';
 	
 	# write individual commands
-	foreach my $command (keys %$iris_command_list)
+	my @sorted_cmd_keys = sort keys %$iris_command_list;
+	foreach my $command (@sorted_cmd_keys)
 	{
 		warn Dumper($command) if ($debug);
 		$irisCommandsFileText.=join "\t",$command,$iris_command_list->{$command};
 		$irisCommandsFileText.="\n";
 	}
-	foreach my $command (@$iris_dep_command_list)
+	my @sorted_dep_cmd = sort @$iris_dep_command_list;
+	foreach my $command (@sorted_dep_cmd)
 	{
 		warn Dumper($command) if ($debug);
 		$irisCommandsFileText.=join "\t",$command,'deprecated';
