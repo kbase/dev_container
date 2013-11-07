@@ -29,7 +29,8 @@ SERVICE_DIR = $(TARGET)/services/$(SERVICE)
 SERVICE_SUBDIRS = webroot
 
 TPAGE = $(DEPLOY_RUNTIME)/bin/perl $(DEPLOY_RUNTIME)/bin/tpage
-MK_CONFIG = $(TOOL_DIR)/mkcfg
+MK_CONFIG = $(TOOLS_DIR)/mkcfg
+SCRIPT_TYPE = $(TOOLS_DIR)/script_type
 
 JAVA = java
 JAVAC = javac
