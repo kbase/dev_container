@@ -6,7 +6,7 @@ deploy-dir-service:
 		done;  \
 	fi
 
-deploy-scripts: deploy-perl-scripts deploy-python-scripts
+deploy-scripts: deploy-perl-scripts deploy-python-scripts deploy-perl-scripts-pl deploy-python-scripts-py deploy-unknown-scripts
 
 deploy-perl-scripts:
 	export KB_TOP=$(TARGET); \
@@ -20,6 +20,18 @@ deploy-perl-scripts:
 		$(WRAP_PERL_SCRIPT) "$(TARGET)/plbin/$$basefile" $(TARGET)/bin/$$base ; \
 	done 
 
+deploy-perl-scripts-pl:
+	export KB_TOP=$(TARGET); \
+	export KB_RUNTIME=$(DEPLOY_RUNTIME); \
+	export KB_PERL_PATH=$(TARGET)/lib ; \
+	for src in $(SRC_PERL) ; do \
+		basefile=`basename $$src`; \
+		base=$$basefile; \
+		echo install $$src $$base ; \
+		cp $$src $(TARGET)/plbin ; \
+		$(WRAP_PERL_SCRIPT) "$(TARGET)/plbin/$$basefile" $(TARGET)/bin/$$base ; \
+	done
+
 deploy-python-scripts:
 	export KB_TOP=$(TARGET); \
 	export KB_RUNTIME=$(DEPLOY_RUNTIME); \
@@ -32,7 +44,45 @@ deploy-python-scripts:
 		$(WRAP_PYTHON_SCRIPT) "$(TARGET)/pybin/$$basefile" $(TARGET)/bin/$$base ; \
 	done 
 
-deploy-libs:
+deploy-python-scripts-py:
+	export KB_TOP=$(TARGET); \
+	export KB_RUNTIME=$(DEPLOY_RUNTIME); \
+	export KB_PYTHON_PATH=$(TARGET)/lib ; \
+	for src in $(SRC_PYTHON) ; do \
+		basefile=`basename $$src`; \
+		base=$$basefile; \
+		echo install $$src $$base ; \
+		cp $$src $(TARGET)/pybin ; \
+		$(WRAP_PYTHON_SCRIPT) "$(TARGET)/pybin/$$basefile" $(TARGET)/bin/$$base ; \
+	done
+
+deploy-unknown-scripts:
+	echo "unknown scripts; $(SRC_UNKNOWN)" 
+	export KB_TOP=$(TARGET) ; \
+	export KB_RUNTIME=$(DEPLOY_RUNTIME) ; \
+	export KB_PYTHON_PATH=$(TARGET)/lib ; \
+	for src in $(SRC_UNKNOWN) ; do \
+		type=`$(SCRIPT_TYPE) $$src` ; \
+		echo "treating $$src as type $$type" ; \
+		basefile=`basename $$src`; \
+		base=$$basefile; \
+		echo install $$src $$base ; \
+		if [ "$$type" = "pl" ] ; then \
+			cp $$src $(TARGET)/plbin ; \
+			$(WRAP_PERL_SCRIPT) "$(TARGET)/plbin/$$basefile" $(TARGET)/bin/$$base ; \
+		elif [ "$$type" = "py" ] ; then \
+			cp $$src $(TARGET)/pybin ; \
+			$(WRAP_PYTHON_SCRIPT) "$(TARGET)/pybin/$$basefile" $(TARGET)/bin/$$base ; \
+		elif [ "$$type" = "sh" ] ; then \
+			# cp $$src $(TARGET)/shbin ; \
+			# $(WRAP_SHELL_SCRIPT) "$(TARGET)/shbin/$$basefile" $(TARGET)/bin/$$base ; \
+			echo "need to implement wrap sh script" ; \
+		else  \
+			echo "$$src is of unknown type: $$type" ; \
+		fi \
+	done
+
+deploy-lib:
 	rsync --exclude '*.bak*' -arv lib/. $(TARGET)/lib/.
 
 deploy-cfg:
