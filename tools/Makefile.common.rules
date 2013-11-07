@@ -86,7 +86,7 @@ deploy-lib:
 	rsync --exclude '*.bak*' -arv lib/. $(TARGET)/lib/.
 
 deploy-cfg:
-	$(DEPLOY_RUNTIME)/bin/perl $(TOOLS_DIR)/$(MK_CONFIG)
+	$(DEPLOY_RUNTIME)/bin/perl $(MK_CONFIG)
 #
 # We depend on the toplevel user-env so that a re-bootstrap
 # will cause the scripts to be rebuilt. This eliminates a class
