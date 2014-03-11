@@ -14,13 +14,13 @@ pod2usage(-exitstatus => 0, -verbose => 2) if $help;
 # it is not clear to me if this program should assume the location
 # of deployment.cfg under TARGET or if it should check the TARGET
 # variable. For now, I think we'll not use the TARGET variable.
-die "envionment variable TARGET not defined" unless $ENV{TARGET};
+# die "envionment variable TARGET not defined" unless $ENV{TARGET};
 
 my $global_cfg = Config::Simple->new( syntax => 'ini' );
 my $local_cfg  = Config::Simple->new( syntax => 'ini' );
 
 # if there is a global deployment.cfg file, read it
-if (defined $target ) {
+if (defined $target && $target ne "") {
 	# then use the command line provided target
 	die "$target is not a valid directory" unless -d $target;
 	die "$target is not a writable directory" unless -w $target;

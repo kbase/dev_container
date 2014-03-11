@@ -6,7 +6,7 @@ deploy-dir-service:
 		done;  \
 	fi
 
-deploy-scripts: deploy-perl-scripts deploy-python-scripts deploy-perl-scripts-pl deploy-python-scripts-py deploy-unknown-scripts
+deploy-scripts: deploy-perl-scripts deploy-python-scripts deploy-sh-scripts deploy-perl-scripts-pl deploy-python-scripts-py deploy-sh-scripts-sh deploy-unknown-scripts
 
 deploy-perl-scripts:
 	export KB_TOP=$(TARGET); \
@@ -56,8 +56,32 @@ deploy-python-scripts-py:
 		$(WRAP_PYTHON_SCRIPT) "$(TARGET)/pybin/$$basefile" $(TARGET)/bin/$$base ; \
 	done
 
+deploy-sh-scripts:
+	export KB_TOP=$(TARGET); \
+	export KB_RUNTIME=$(DEPLOY_RUNTIME); \
+	export KB_SH_PATH=$(TARGET)/lib ; \
+	for src in $(SRC_SH) ; do \
+		basefile=`basename $$src`; \
+		base=$$basefile .sh; \
+		echo install $$src $$base ; \
+		cp $$src $(TARGET)/shbin ; \
+		$(WRAP_SH_SCRIPT) "$(TARGET)/pybin/$$basefile" $(TARGET)/bin/$$base ; \
+	done
+
+deploy-sh-scripts-sh:
+        export KB_TOP=$(TARGET); \
+        export KB_RUNTIME=$(DEPLOY_RUNTIME); \
+        export KB_SH_PATH=$(TARGET)/lib ; \
+        for src in $(SRC_SH) ; do \
+                basefile=`basename $$src`; \
+                base=$$basefile; \
+                echo install $$src $$base ; \
+                cp $$src $(TARGET)/shbin ; \
+                $(WRAP_SH_SCRIPT) "$(TARGET)/shbin/$$basefile" $(TARGET)/bin/$$base ; \
+        done
+
 deploy-unknown-scripts:
-	echo "unknown scripts; $(SRC_UNKNOWN)" 
+	echo "unknown scripts; $(SRC_UNKNOWN)"
 	export KB_TOP=$(TARGET) ; \
 	export KB_RUNTIME=$(DEPLOY_RUNTIME) ; \
 	export KB_PYTHON_PATH=$(TARGET)/lib ; \
@@ -74,19 +98,18 @@ deploy-unknown-scripts:
 			cp $$src $(TARGET)/pybin ; \
 			$(WRAP_PYTHON_SCRIPT) "$(TARGET)/pybin/$$basefile" $(TARGET)/bin/$$base ; \
 		elif [ "$$type" = "sh" ] ; then \
-			# cp $$src $(TARGET)/shbin ; \
-			# $(WRAP_SHELL_SCRIPT) "$(TARGET)/shbin/$$basefile" $(TARGET)/bin/$$base ; \
-			echo "need to implement wrap sh script" ; \
+			cp $$src $(TARGET)/shbin ; \
+			$(WRAP_SH_SCRIPT) "$(TARGET)/shbin/$$basefile" $(TARGET)/bin/$$base ; \
 		else  \
 			echo "$$src is of unknown type: $$type" ; \
 		fi \
 	done
 
-deploy-lib:
+deploy-libs:
 	rsync --exclude '*.bak*' -arv lib/. $(TARGET)/lib/.
 
 deploy-cfg:
-	$(DEPLOY_RUNTIME)/bin/perl $(MK_CONFIG)
+	$(DEPLOY_RUNTIME)/bin/perl $(TOOLS_DIR)/$(MK_CONFIG) -t $(TARGET)
 #
 # We depend on the toplevel user-env so that a re-bootstrap
 # will cause the scripts to be rebuilt. This eliminates a class

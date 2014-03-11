@@ -2,6 +2,8 @@ ifeq ($(KB_TOP),)
      $(error The KB_TOP environment is not set - have you sourced your user-env.sh file?)
 endif
 
+SERVICE_USER = kbase
+
 BIN_DIR = $(TOP_DIR)/bin
 TOOLS_DIR = $(TOP_DIR)/tools
 LIBEXEC_DIR = $(KB_TOP)/libexec
@@ -23,6 +25,14 @@ SRC_PYTHON = $(wildcard scripts/*.py)
 BIN_PYTHON = $(addprefix $(BIN_DIR)/,$(basename $(notdir $(SRC_PYTHON))))
 
 DEPLOY_PYTHON = $(addprefix $(TARGET)/bin/,$(basename $(notdir $(SRC_PYTHON))))
+
+WRAP_SH_TOOL = wrap_sh
+WRAP_SH_SCRIPT = bash $(TOOLS_DIR)/$(WRAP_SH_TOOL).sh
+
+SRC_SH = $(wildcard scripts/*.sh)
+BIN_SH = $(addprefix $(BIN_DIR)/,$(basename $(notdir $(SRC_SH))))
+
+DEPLOY_SH = $(addprefix $(TARGET)/bin/,$(basename $(notdir $(SRC_SH))))
 
 SERVICE_DIR = $(TARGET)/services/$(SERVICE)
 
