@@ -12,7 +12,7 @@ fi
 src=$1
 dst=$2
 
-
+pl_path=`which perl`
 
 cat > $dst <<EOF1
 #!/bin/sh
@@ -28,7 +28,7 @@ for var in $WRAP_VARIABLES ; do
 	fi
 done
 cat >> $dst <<EOF
-$KB_RUNTIME/bin/perl $src "\$@"
+$pl_path $src "\$@"
 EOF
 
 chmod +x $dst
