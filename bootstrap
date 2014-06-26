@@ -21,6 +21,7 @@ fail () {
 wrap_perl () {
     src=$1
     dst=$2
+    pl_path=`which perl`
     cat > $dst <<EOF
 #!/bin/sh
 export KB_TOP=$top_dir
@@ -28,7 +29,7 @@ export KB_RUNTIME=$rt_dir
 export KB_PERL_PATH=$perl_lib
 export KB_PYTHON_PATH=$python_lib
 export KB_R_PATH=$rscript_lib
-$rt_dir/bin/perl $top_dir/$src "\$@"
+$pl_path $top_dir/$src "\$@"
 EOF
     chmod +x $dst
 }
@@ -151,7 +152,7 @@ if [ "$JAVA_HOME" = "" ] ; then
 	java_path="/Library/Java/Home"
     else 
 	echo "JAVA_HOME not found" 1>&2
-	exit 1
+	#exit 1
 	#
 	# Try to find javac, and set based on that.
 	#
@@ -175,7 +176,7 @@ if [ "$CATALINA_HOME" = "" ] ; then
 	tomcat_path="/Library/Tomcat/Home"
     else 
 	echo "CATALINA_HOME not found" 1>&2
-	exit 1
+	#exit 1
     fi
 else
 	tomcat_path="$CATALINA_HOME"
