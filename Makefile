@@ -9,8 +9,8 @@ MODULE_DIRS = $(foreach mod,$(MODULES),modules/$(mod))
 #
 # Default deplyment target. May be overridden to deploy to an alternative location.
 #
-TARGET = /kb/deployment
-DEPLOY_RUNTIME = /kb/runtime
+TARGET ?= /kb/deployment
+DEPLOY_RUNTIME ?= /kb/runtime
 
 all: build_modules
 
