@@ -69,9 +69,9 @@ if [ ! -d $rt_dir ] ; then
     fail "Runtime directory $rt_dir does not exist"
 fi
 
-if [ ! -x $rt_dir/bin/perl ] ; then
-    fail "Runtime directory $rt_dir does not contain an executable perl"
-fi
+#if [ ! -x $rt_dir/bin/perl ] ; then
+#    fail "Runtime directory $rt_dir does not contain an executable perl"
+#fi
 
 if [ -d $top_dir/runtime ] ; then
     t=`readlink $top_dir/runtime`

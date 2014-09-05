@@ -38,7 +38,8 @@ SERVICE_DIR = $(TARGET)/services/$(SERVICE)
 
 SERVICE_SUBDIRS = webroot
 
-TPAGE = $(DEPLOY_RUNTIME)/bin/perl $(DEPLOY_RUNTIME)/bin/tpage
+PPATH = $(shell which perl)
+TPAGE = $(shell which tpage)
 MK_CONFIG = $(TOOLS_DIR)/mkcfg
 SCRIPT_TYPE = $(TOOLS_DIR)/script_type
 
