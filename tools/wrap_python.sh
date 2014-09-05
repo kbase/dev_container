@@ -10,6 +10,8 @@ fi
 src=$1
 dst=$2
 
+py_path=`which python`
+
 cat > $dst <<EOF
 #!/bin/sh
 export KB_TOP=$KB_TOP
@@ -17,7 +19,7 @@ export KB_RUNTIME=$KB_RUNTIME
 export KB_PYTHON_PATH=$KB_PYTHON_PATH
 export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:\$PATH
 export PYTHONPATH=$KB_PYTHON_PATH:\$PYTHONPATH
-python $src "\$@"
+$py_path $src "\$@"
 EOF
 
 chmod +x $dst
